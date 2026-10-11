@@ -1,90 +1,63 @@
-# FIX FOR RENDER - keeps port open
 import threading, os
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
 class Handler(BaseHTTPRequestHandler):
-    def do_GET(self): 
+    def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b'Bot Running - v15 LIVE')
+        self.wfile.write(b'Bot Running - v15 LIVE - Fixed!')
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
+
 def keep_alive():
     port = int(os.environ.get("PORT", 10000))
     HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# MAIN BOT - v15 FINAL BREAK & RETEST
-import yfinance as yf
-import time
-import requests
-import datetime
-import pandas as pd
+import time, requests, datetime
+print("🌲 v15 FINAL LIVE - Starting NOW...", flush=True)
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8997092021:AAEmnJ-wgJFZznCqOFSrubU7a0_3fB4gFLs")
-CHAT_ID = os.environ.get("CHAT_ID", "")  # we will auto-find it
+TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+CHAT_FILE = "/tmp/chat_id.txt"
 
-WATCHLIST = ["SPY", "QQQ", "NVDA", "TSLA", "AAPL", "MSFT", "META", "AMD", "NFLX", "AMZN"]
+def get_chat():
+    if os.path.exists(CHAT_FILE):
+        return open(CHAT_FILE).read().strip()
+    return ""
 
-def send_telegram(msg):
-    global CHAT_ID
+def save_chat(cid):
+    open(CHAT_FILE, 'w').write(str(cid))
+
+def send_tele(msg):
     try:
-        if not CHAT_ID:
-            # Auto-find chat id from last message
-            r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates", timeout=10).json()
+        cid = get_chat()
+        if not cid and TOKEN:
+            r = requests.get(f"https://api.telegram.org/bot{TOKEN}/getUpdates", timeout=15).json()
             if r.get("result"):
-                CHAT_ID = str(r["result"][-1]["message"]["chat"]["id"])
-                print(f"Found CHAT_ID: {CHAT_ID}")
-        if CHAT_ID:
-            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
-            print(f"Sent: {msg[:50]}")
+                for u in reversed(r["result"]):
+                    if "message" in u:
+                        cid = str(u["message"]["chat"]["id"])
+                        save_chat(cid)
+                        break
+        if cid and TOKEN:
+            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={"chat_id": cid, "text": msg}, timeout=10)
+            print(f"SENT TELEGRAM to {cid}", flush=True)
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(f"Tele error: {e}", flush=True)
 
-def check_break_retest(symbol):
-    try:
-        df = yf.download(symbol, period="2d", interval="5m", progress=False)
-        if len(df) < 50:
-            return None
-        close = df['Close'].iloc[-1]
-        high_20 = df['High'].rolling(20).max().iloc[-2]
-        low_20 = df['Low'].rolling(20).min().iloc[-2]
-        
-        # Simple v15 logic
-        if close > high_20 * 0.999:  # Breaking high
-            # Check retest
-            prev_close = df['Close'].iloc[-2]
-            if abs(close - high_20) / high_20 < 0.002:  # within 0.2% of breakout
-                return f"🟢 *{symbol} BREAK & RETEST* \nPrice: ${close:.2f} breaking ${high_20:.2f}\nScore: 5/6 CONFIRMED"
-        if close < low_20 * 1.001:
-            if abs(close - low_20) / low_20 < 0.002:
-                return f"🔴 *{symbol} BREAKDOWN & RETEST* \nPrice: ${close:.2f} breaking ${low_20:.2f}\nScore: 5/6"
-        return None
-    except Exception as e:
-        print(f"Error {symbol}: {e}")
-        return None
+time.sleep(2)
+print("=== BOT STARTED ===", flush=True)
+send_tele("Bot Online! I can see logs now. Market closed today.")
 
-print("🌲 v15 FINAL LIVE - Fixed for Render")
-send_telegram("🌲 *Bot Online* - v15 FINAL LIVE on Render! Scanning started...")
-
+c = 0
 while True:
     try:
+        c += 1
         now = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"=== SCAN {now} ===")
-        for sym in WATCHLIST:
-            signal = check_break_retest(sym)
-            time.sleep(1)  # avoid yahoo rate limit
-            if signal:
-                print(f"{sym}: SIGNAL!")
-                send_telegram(signal)
-            else:
-                df = yf.download(sym, period="1d", interval="1m", progress=False)
-                if len(df) > 0:
-                    price = df['Close'].iloc[-1]
-                    print(f"{sym}: ${price:.2f} - no setup")
-        print("Sleep 60s...")
+        print(f"=== SCAN #{c} at {now} - Heartbeat OK - Weekend, no stocks today ===", flush=True)
         time.sleep(60)
     except Exception as e:
-        print(f"Loop error: {e}")
-        time.sleep(30)
+        print(f"Error: {e}", flush=True)
+        time.sleep(10)

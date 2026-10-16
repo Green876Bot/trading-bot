@@ -1,43 +1,55 @@
-import os, threading, time
-from datetime import datetime
+import os, time, threading, requests
 from flask import Flask
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-import asyncio
+from datetime import datetime
 
 TOKEN = os.getenv("TELEGRAM_TOKEN","").strip()
-print(f"=== Green Bot v18 FINAL - Token OK: {bool(TOKEN)} ===")
+print(f"=== Green Bot v19 - FIXED FOR PYTHON 3.14 ===")
+print(f"Token OK: {bool(TOKEN)}")
 
-# Flask to keep Render Web Service alive
-app_flask = Flask(__name__)
-@app_flask.route('/')
+app = Flask(__name__)
+
+@app.route('/')
 def home():
-    return "Bot is Live! Send /start to @Green876Bot"
+    return "Bot is Live! Go to Telegram @Green876Bot and send /start"
 
-# Telegram handler
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cid = update.effective_chat.id
-    print(f"!!! GOT /start from {cid} !!!")
-    await update.message.reply_text(
-        f"✅ BOT IS LIVE!\n\nYour Chat ID is: {cid}\n\nNow go to Render -> Environment -> Add:\nTELEGRAM_CHAT_ID = {cid}\n\nYou will get alerts!"
-    )
+def telegram_polling():
+    print("Starting Telegram polling with requests...")
+    offset = 0
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+            r = requests.get(url, params={"offset": offset, "timeout": 30}, timeout=35)
+            data = r.json()
+            if data.get("ok"):
+                for update in data.get("result", []):
+                    offset = update["update_id"] + 1
+                    msg = update.get("message", {})
+                    text = msg.get("text", "")
+                    chat_id = msg.get("chat", {}).get("id")
+                    print(f"Got message: {text} from {chat_id}")
+                    if text == "/start" and chat_id:
+                        # Reply
+                        send_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+                        reply = f"✅ BOT IS LIVE!\n\nYour Chat ID is: {chat_id}\n\nGo to Render -> Environment -> Add:\nTELEGRAM_CHAT_ID = {chat_id}"
+                        requests.post(send_url, json={"chat_id": chat_id, "text": reply})
+                        print(f"Replied to {chat_id}")
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(5)
+        time.sleep(2)
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app_flask.run(host='0.0.0.0', port=port)
-
-async def run_telegram():
-    print("Telegram polling started - Send /start now!")
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    await app.run_polling()
-
-def start_threads():
-    # Start Flask in background thread
-    t = threading.Thread(target=run_flask, daemon=True)
-    t.start()
-    # Run Telegram polling (main)
-    asyncio.run(run_telegram())
+def heartbeat():
+    count = 0
+    while True:
+        count += 1
+        print(f"=== SCAN #{count} at {datetime.now().strftime('%H:%M:%S')} - Bot alive - Send /start to test ===")
+        time.sleep(60)
 
 if __name__ == "__main__":
-    start_threads()
+    # Start polling in background
+    threading.Thread(target=telegram_polling, daemon=True).start()
+    threading.Thread(target=heartbeat, daemon=True).start()
+    # Start Flask
+    port = int(os.environ.get("PORT", 10000))
+    print(f"Starting Flask on port {port}")
+    app.run(host='0.0.0.0', port=port)
